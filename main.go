@@ -65,6 +65,7 @@ func main() {
 	traceMode = args["--trace"].(bool)
 	if traceMode {
 		logger.SetLevel(lorg.LevelTrace)
+		debugMode = true
 	}
 
 	config, err := getConfig(args["--config"].(string))
@@ -110,6 +111,8 @@ func main() {
 	}
 
 	go watchDatabaseConnection(app.db)
+
+	infof("listening and serving connections at %s", config.Web.Listen)
 
 	err = router.RunTLS(
 		config.Web.Listen,

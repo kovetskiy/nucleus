@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"io/ioutil"
 	"net/http"
 	"strings"
 
@@ -13,26 +14,22 @@ import (
 )
 
 type OAuth struct {
-	Name        string
-	HomeURL     string
-	Server      string
-	SessionURL  string
-	UserURL     string
-	RedirectURL string
-	Consumer    *oauth.Consumer
+	OAuthConfig
+	homeURL  string
+	consumer *oauth.Consumer
 }
 
-func NewOAuth(
-	name string,
-	server string,
-	sessionURL string,
-	userURL string,
-	consumerKey string,
-	privatePEMKey []byte,
-	homeURL string,
-) (*OAuth, error) {
+func NewOAuth(config OAuthConfig, homeURL string) (*OAuth, error) {
+	keyData, err := ioutil.ReadFile(config.KeyFile)
+	if err != nil {
+		return nil, hierr.Errorf(
+			err,
+			"can't read key file",
+		)
+	}
+
 	// second return value is not error
-	decodedKey, _ := pem.Decode(privatePEMKey)
+	decodedKey, _ := pem.Decode(keyData)
 
 	privateKey, err := x509.ParsePKCS1PrivateKey(decodedKey.Bytes)
 	if err != nil {
@@ -42,15 +39,15 @@ func NewOAuth(
 		)
 	}
 
-	server = strings.TrimRight(server, "/")
+	basicURL := strings.TrimRight(config.BasicURL, "/")
 
 	consumer := oauth.NewRSAConsumer(
-		consumerKey,
+		config.Consumer,
 		privateKey,
 		oauth.ServiceProvider{
-			RequestTokenUrl:   server + "/plugins/servlet/oauth/request-token",
-			AuthorizeTokenUrl: server + "/plugins/servlet/oauth/authorize",
-			AccessTokenUrl:    server + "/plugins/servlet/oauth/access-token",
+			RequestTokenUrl:   basicURL + config.RequestTokenURL,
+			AuthorizeTokenUrl: basicURL + config.AuthorizeTokenURL,
+			AccessTokenUrl:    basicURL + config.AccessTokenURL,
 			HttpMethod:        "POST",
 		},
 	)
@@ -64,34 +61,32 @@ func NewOAuth(
 	}
 
 	return &OAuth{
-		Name:       name,
-		SessionURL: sessionURL,
-		UserURL:    userURL,
-		HomeURL:    homeURL,
-		Server:     server,
-		Consumer:   consumer,
+		OAuthConfig: config,
+		homeURL:     homeURL,
+		consumer:    consumer,
 	}, nil
 }
 
 func (oauth *OAuth) GetRequestTokenAndURL() (
 	*oauth.RequestToken, string, error,
 ) {
-	loginURL := oauth.HomeURL + "/login/" + oauth.Name
+	loginURL := strings.TrimRight(oauth.homeURL, "/") +
+		"/login/" + oauth.Slug + "/"
 
-	return oauth.Consumer.GetRequestTokenAndUrl(loginURL)
+	return oauth.consumer.GetRequestTokenAndUrl(loginURL)
 }
 
 func (oauth *OAuth) GetAccessToken(
 	requestToken *oauth.RequestToken, verifier string,
 ) (*oauth.AccessToken, error) {
-	return oauth.Consumer.AuthorizeToken(requestToken, verifier)
+	return oauth.consumer.AuthorizeToken(requestToken, verifier)
 }
 
 func (oauth *OAuth) GetRequest(
 	url string, params map[string]string, accessToken *oauth.AccessToken,
 ) (map[string]interface{}, error) {
-	rawResponse, err := oauth.Consumer.Get(
-		oauth.Server+url, params, accessToken,
+	rawResponse, err := oauth.consumer.Get(
+		strings.TrimRight(oauth.BasicURL, "/")+url, params, accessToken,
 	)
 	if err != nil {
 		return nil, err

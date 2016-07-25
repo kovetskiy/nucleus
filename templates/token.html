@@ -1,0 +1,46 @@
+{{ template "header" }}
+<div id="main">
+  <div class="header">
+    <h1>Access Tokens</h1>
+    <h2>Welcome back, {{ .user.Info.displayName }}.</h2>
+  </div>
+</div>
+
+<div class="token">
+  <pre class="code code-wrap"><code id="token">{{ .user.Token }}</code></pre>
+  <p>
+    <a class="button-secondary pure-button" href="#" id="generate">
+      Generate New Token
+    </a>
+  </p>
+</div>
+
+<script type="text/javascript">
+$(document).ready(function() {
+  $('#generate').click(function(event) {
+    event.preventDefault();
+
+    if ($('#generate').hasClass('pure-button-disabled')) {
+      return;
+    }
+
+    $('#token').text('Loading...')
+    $('#generate').addClass('pure-button-disabled')
+
+    $.ajax({
+      method: 'POST',
+      url: '/token',
+      dataType: 'json',
+    }).done(function(response) {
+      if (response && response.token) {
+        $('#token').text(response.token)
+      } else {
+        $('#token').text('ERROR')
+      }
+
+      $('#generate').removeClass('pure-button-disabled')
+    });
+  })
+})
+</script>
+{{ template "footer" }}

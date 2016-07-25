@@ -22,15 +22,27 @@ var (
 
 func (app *app) checkAccess(x *gin.Context) bool {
 	var (
-		token, _ = x.Request.Cookie("token")
+		cookie, _ = x.Cookie("token")
+		field, _  = x.GetPostForm("token")
 	)
 
-	if token == nil {
+	var token string
+	if cookie != "" {
+		token = cookie
+	}
+
+	if field != "" {
+		token = field
+	}
+
+	if token == "" {
+		tracef("no token specified")
 		return false
 	}
 
-	user, err := app.getUserByToken(token.Value)
+	user, err := app.getUser("token", token)
 	if err == mgo.ErrNotFound {
+		tracef("unknown token")
 		return false
 	}
 
@@ -38,7 +50,7 @@ func (app *app) checkAccess(x *gin.Context) bool {
 		errorln(
 			hierr.Errorf(
 				err, "can't obtain user with token '%s'",
-				token.Value,
+				token,
 			),
 		)
 		x.AbortWithStatus(http.StatusInternalServerError)
@@ -47,6 +59,8 @@ func (app *app) checkAccess(x *gin.Context) bool {
 
 	x.Set("user", user)
 
+	tracef("valid token, user found")
+
 	return true
 }
 
@@ -54,6 +68,7 @@ func (app *app) handleIndex(x *gin.Context) {
 	if app.checkAccess(x) {
 		render(x, layoutToken)
 	} else if !x.IsAborted() {
+		x.Set("oauth", app.config.OAuth)
 		render(x, layoutLogin)
 	}
 }
@@ -87,19 +102,13 @@ func (app *app) handleGenerateToken(x *gin.Context) {
 		return
 	}
 
-	http.SetCookie(x.Writer, &http.Cookie{
-		Name:   "token",
-		Value:  token,
-		Secure: true,
-	})
-}
+	tracef("set cookie token=%s", token)
 
-func (app *app) handleAccess(x *gin.Context) {
-	if app.checkAccess(x) {
-		x.AbortWithStatus(http.StatusOK)
-	} else {
-		x.AbortWithStatus(http.StatusUnauthorized)
-	}
+	x.SetCookie("token", token, int(time.Hour), "/", "", false, false)
+
+	x.IndentedJSON(http.StatusOK, map[string]interface{}{
+		"token": token,
+	})
 }
 
 func (app *app) handleUser(x *gin.Context) {
@@ -137,7 +146,7 @@ func (app *app) handleLogin(x *gin.Context) {
 		"context is not aborted, but access token is nil",
 	)
 
-	user, err := app.getUserByusername(username)
+	user, err := app.getUser("username", username)
 	if err != nil && err != mgo.ErrNotFound {
 		errorln(
 			hierr.Errorf(
@@ -150,6 +159,8 @@ func (app *app) handleLogin(x *gin.Context) {
 
 	var token string
 	if err == mgo.ErrNotFound {
+		tracef("creating new user")
+
 		userinfo, err := oauth.GetRequest(
 			oauth.UserURL,
 			map[string]string{"username": username},
@@ -159,18 +170,18 @@ func (app *app) handleLogin(x *gin.Context) {
 			errorln(
 				hierr.Errorf(
 					err, "can't execute OAuth request to '%s' (%s)",
-					oauth.UserURL, oauth.Server,
+					oauth.UserURL, oauth.BasicURL,
 				),
 			)
 			x.AbortWithStatus(http.StatusBadGateway)
 			return
 		}
 
-		token, err = app.adduser(username, userinfo)
+		token, err = app.addUser(username, userinfo)
 		if err != nil {
 			errorln(
 				hierr.Errorf(
-					err, "can't update userinfo for user '%s'",
+					err, "can't add user '%s' to database",
 					username,
 				),
 			)
@@ -178,17 +189,18 @@ func (app *app) handleLogin(x *gin.Context) {
 			return
 		}
 	} else {
+		tracef("user already created, token is '%s'", user.Token)
 		token = user.Token
 	}
 
-	http.SetCookie(x.Writer, &http.Cookie{
-		Name:   "token",
-		Value:  token,
-		Secure: true,
-	})
+	tracef("set cookie token=%s", token)
 
+	x.SetCookie(
+		"token", token, int(time.Hour), "/", "", false, false,
+	)
 	x.Redirect(http.StatusTemporaryRedirect, "/")
 	x.Abort()
+
 	return
 }
 
@@ -233,6 +245,10 @@ func (app *app) handleAuthentificate(
 	}
 
 	requestToken := app.tokens.Get(token)
+	if requestToken == nil {
+		x.AbortWithStatus(http.StatusBadRequest)
+		return nil, nil, ""
+	}
 
 	accessToken, err := oauth.GetAccessToken(requestToken, verifier)
 	if err != nil {
@@ -255,7 +271,7 @@ func (app *app) handleAuthentificate(
 		errorln(
 			hierr.Errorf(
 				err, "can't execute OAuth request to '%s' (%s)",
-				oauth.SessionURL, oauth.Server,
+				oauth.SessionURL, oauth.BasicURL,
 			),
 		)
 		x.AbortWithStatus(http.StatusBadGateway)
@@ -278,15 +294,16 @@ func (app *app) handleAuthentificate(
 }
 
 func (app *app) updateToken(username string, token string) error {
-	_, err := app.db.tokens.Upsert(bson.M{
-		"username": username,
-	}, bson.M{
+	payload := bson.M{
 		"$set": bson.M{
 			"token":      token,
 			"token_date": time.Now().Unix(),
 		},
-	})
+	}
 
+	tracef("update token for user '%s': %#v", payload)
+
+	err := app.db.tokens.Update(bson.M{"username": username}, payload)
 	return err
 }
 
@@ -297,47 +314,32 @@ func (app *app) generateToken() string {
 	)
 }
 
-func (app *app) adduser(
+func (app *app) addUser(
 	username string,
 	userinfo map[string]interface{},
 ) (string, error) {
 	token := app.generateToken()
+	payload := bson.M{
+		"username":    username,
+		"userinfo":    userinfo,
+		"token":       token,
+		"token_date":  time.Now().Unix(),
+		"create_date": time.Now().Unix(),
+	}
 
-	err := app.db.tokens.Insert(bson.M{
-		"$set": bson.M{
-			"username":    username,
-			"userinfo":    userinfo,
-			"token":       token,
-			"token_date":  time.Now().Unix(),
-			"create_date": time.Now().Unix(),
-		},
-	})
+	tracef("adding user %#v", payload)
 
+	err := app.db.tokens.Insert(payload)
 	return token, err
 }
 
-func (app *app) getUserByToken(token string) (user, error) {
+func (app *app) getUser(key, value string) (user, error) {
+	tracef("get user by %s '%s'", key, value)
+
 	var resource user
+	err := app.db.tokens.Find(bson.M{key: value}).One(&resource)
 
-	err := app.db.tokens.Find(
-		bson.M{"token": token},
-	).One(&resource)
-	if err != nil {
-		return user{}, err
-	}
+	tracef("resource: %#v", resource)
 
-	return resource, nil
-}
-
-func (app *app) getUserByusername(username string) (user, error) {
-	var resource user
-
-	err := app.db.tokens.Find(
-		bson.M{"username": username},
-	).One(&resource)
-	if err != nil {
-		return user{}, err
-	}
-
-	return resource, nil
+	return resource, err
 }

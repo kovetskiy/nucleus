@@ -1,10 +1,6 @@
 package main
 
-import (
-	"io/ioutil"
-
-	"github.com/seletskiy/hierr"
-)
+import "github.com/seletskiy/hierr"
 
 type app struct {
 	config *config
@@ -16,33 +12,19 @@ type app struct {
 func newApp(config *config) (*app, error) {
 	oauth := map[string]*OAuth{}
 	for _, oauthData := range config.OAuth {
-		keyData, err := ioutil.ReadFile(oauthData.Key)
-		if err != nil {
-			return nil, hierr.Errorf(
-				err,
-				"can't read oauth key file for server %s",
-				oauthData.Server,
-			)
-		}
-
 		server, err := NewOAuth(
-			oauthData.Name,
-			oauthData.Server,
-			oauthData.SessionURL,
-			oauthData.UserURL,
-			oauthData.Consumer,
-			keyData,
+			oauthData,
 			config.Web.URL,
 		)
 		if err != nil {
 			return nil, hierr.Errorf(
 				err,
 				"can't obtain oauth instance for server %s",
-				oauthData.Server,
+				oauthData.BasicURL,
 			)
 		}
 
-		oauth[oauthData.Name] = server
+		oauth[oauthData.Slug] = server
 	}
 
 	tokens, err := NewOAuthTokensTable()
@@ -61,6 +43,8 @@ func newApp(config *config) (*app, error) {
 		)
 	}
 
+	infof("tokens table initialized")
+
 	db := &database{
 		dsn: config.Database.Address,
 	}
@@ -72,6 +56,8 @@ func newApp(config *config) (*app, error) {
 			"can't establish database connection",
 		)
 	}
+
+	infof("database connection established")
 
 	app := &app{
 		config: config,

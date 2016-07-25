@@ -1,0 +1,17 @@
+{{ template "header" }}
+<div id="main">
+  <div class="header">
+    <h1>Access Tokens</h1>
+    <h2>Authorize once, use always. Lazy and secure.</h2>
+  </div>
+</div>
+
+<div class="login-buttons">
+  {{ range $index, $oauth := .oauth }}
+    <a class="pure-button pure-button-primary"
+      href="/login/{{ $oauth.Slug }}/">
+      Authorize using {{ $oauth.Name }}
+    </a>
+  {{ end }}
+</div>
+{{ template "footer" }}
