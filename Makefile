@@ -15,4 +15,4 @@ clean:
 	@git clean -ffdx
 
 test:
-	@./tests/run_tests
+	@./tests/run_tests -vv

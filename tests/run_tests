@@ -7,11 +7,25 @@ source ../vendor/github.com/reconquest/import.bash/import.bash
 
 import:source "github.com/reconquest/test-runner.bash"
 
+:check() {
+    if ! which blankd &>/dev/null; then
+        echo "dependency is missing: blankd"
+        exit 1
+    fi
+
+    if ! which mongod &>/dev/null; then
+        echo "dependency is missing: mongod"
+        exit 1
+    fi
+}
+
 :main() {
     trap :cleanup EXIT
     :cleanup() {
         :
     }
+
+    go build -o ../nucleus.test ../
 
     test-runner:set-local-setup setup.sh
     test-runner:set-local-teardown teardown.sh
@@ -20,4 +34,5 @@ import:source "github.com/reconquest/test-runner.bash"
     test-runner:run "${@}"
 }
 
+:check
 :main "${@}"
