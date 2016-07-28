@@ -22,8 +22,9 @@ var (
 
 func (app *app) checkAccess(x *gin.Context) bool {
 	var (
-		cookie, _ = x.Cookie("token")
-		field, _  = x.GetPostForm("token")
+		cookie, _       = x.Cookie("token")
+		field, _        = x.GetPostForm("token")
+		_, basicAuth, _ = x.Request.BasicAuth()
 	)
 
 	var token string
@@ -33,6 +34,10 @@ func (app *app) checkAccess(x *gin.Context) bool {
 
 	if field != "" {
 		token = field
+	}
+
+	if basicAuth != "" {
+		token = basicAuth
 	}
 
 	if token == "" {
@@ -106,7 +111,7 @@ func (app *app) handleGenerateToken(x *gin.Context) {
 
 	x.SetCookie("token", token, int(time.Hour), "/", "", false, false)
 
-	x.IndentedJSON(http.StatusOK, map[string]interface{}{
+	x.JSON(http.StatusOK, map[string]interface{}{
 		"token": token,
 	})
 }
