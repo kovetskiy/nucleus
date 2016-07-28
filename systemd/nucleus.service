@@ -1,0 +1,9 @@
+[Unit]
+Description=tokens distribution service
+
+[Service]
+ExecStart=/usr/bin/nucleus
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
