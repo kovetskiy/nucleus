@@ -11,7 +11,7 @@ _bitbucket="127.0.0.1:64777"
 :mongod() {
     tests:make-tmp-dir db
     tests:run-background mongod_background \
-        mongod --dbpath $(tests:get-tmp-dir)/db --port 64999
+        mongod --quiet --dbpath $(tests:get-tmp-dir)/db --port 64999
 }
 
 :bitbucket() {
@@ -51,6 +51,7 @@ _bitbucket="127.0.0.1:64777"
 CONF
 
     tests:ensure openssl req \
+        -batch \
         -new \
         -newkey rsa:1024 \
         -days 365 \
@@ -69,7 +70,7 @@ CONF
 }
 
 :request() {
-    tests:eval  curl -s -v --insecure \
+    tests:eval curl -s -v --insecure -b cookies -c cookies \
         "https://$_nucleus$1" "${@:2}"
 
     cat $(tests:get-stdout-file)

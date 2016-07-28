@@ -1,6 +1,8 @@
-:bitbucket
-:mongod
-:nucleus
+if [[ ! "${NO_DAEMONS:-}" ]]; then
+    :bitbucket
+    :mongod
+    :nucleus
+fi
 
 :bitbucket-set-response <<X
 200 OK
