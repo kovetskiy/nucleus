@@ -21,6 +21,7 @@ md5sums=(
 )
 
 backup=(
+    "etc/nucleus/nucleus.conf"
 )
 
 pkgver() {
@@ -71,5 +72,5 @@ package() {
         "$pkgdir/usr/lib/systemd/system/nucleus.service"
 	install -DT -m0600 \
         "$srcdir/conf/nucleus.conf" \
-        "$pkgdir/etc/nucleus.conf"
+        "$pkgdir/etc/nucleus/nucleus.conf"
 }
